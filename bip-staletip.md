@@ -269,21 +269,21 @@ be stale from the receiver's perspective.
 
 #### Active Tip Announcements
 
-In order for peers to send you `staletip` messages, they must be able
-to track which block is your active tip in order to correctly deduce if
-you already know about the fork point corresponding to new stale tips.
+In order for peers to send useful `staletip` messages, they must be able to
+track which block is your active tip in order to deduce whether you already know
+the fork point corresponding to new stale tips.
 
-Currently, many node implementations make a small optimisation in
-their block announcement handling that conflicts with this requirement;
-namely, they will not announce a block to a peer if they have already
-processed an announcement for the same block from that peer at the time
-they validate the block. That said, due to delays in obtaining block data
-and validating the block, it is usually the case that two well-connected
-peers will announce the same new block to each other.
+Currently, many node implementations make a small optimisation in their block
+announcement handling that conflicts with this requirement: they will not
+announce a block to a peer if they have already processed an announcement for
+the same block from that peer at the time they validate the block. That said,
+due to delays in obtaining block data and validating the block, it is usually
+the case that two well-connected peers will announce the same new block to each
+other.
 
-Nodes implementing this BIP SHOULD always announce their new active tip
-to all peers. To minimise additional bandwidth, they MAY do so via an
-`inv` message (rather than a `headers` or compact block message), however.
+Nodes implementing this BIP SHOULD always announce their new active tip to all
+peers. To minimise additional bandwidth, they MAY do so via an `inv` message
+rather than a `headers` or compact block message.
 
 #### Reconstructing Headers
 
@@ -311,8 +311,9 @@ Note that headers are reconstructed in order, from oldest (closest to the
 
 ### Optionality
 
-Node software implementing this BIP SHOULD provide a configuration option
-to disable it entirely.
+Node software implementing this BIP SHOULD provide a configuration option to
+disable it entirely. Implementations MAY provide separate options for relaying
+stale headers and for requesting or serving stale block data.
 
 ### Test Networks
 
@@ -383,47 +384,54 @@ implementing this BIP on testnet3 or testnet4:
 
 ## Backward Compatibility
 
-This BIP introduces a new P2P message (`staletip`) and relies on [BIP
-434][BIP434] for feature negotiation to avoid impacting nodes that do
-not support this BIP. Nodes that do not support this BIP will at most
-see more frequent notifications of when their peers update to a new
-tip that they have already announced.
+This BIP introduces a new P2P message (`staletip`) and relies on [BIP 434][BIP434]
+for feature negotiation to avoid impacting nodes that do not support this BIP.
+Nodes MUST NOT send `staletip` messages to peers that have not negotiated the
+`staletip` feature.
+
+Nodes that do not support this BIP may still see more frequent notifications of
+when their peers update to a new active tip, if implementations choose to make
+active-tip `inv` announcements to all peers rather than only to peers that
+negotiated the `staletip` feature.
 
 ## Privacy Impact
 
-Sharing stale tips raises two potential concerns related to privacy.
+Sharing stale tips raises several potential privacy concerns.
 
-The first concern is related to fingerprinting, ie that a node's
-behaviour when sharing stale tips may make it easier for peers to
-distinguish that node from others on the network, perhaps allowing
-attackers to relate a node's onion address with its IPv4 address, for
-instance. Since it is expected that stale tips will propagate fairly
-efficiently and consistently (meaning that behaviour differences will
-be small), and that they will remain exceedingly rare (meaning that it
-will be hard to observe patterns of behaviour), this is not expected to
-be a significant problem in practice. For users that remain concerned,
-disabling stale tip relay entirely is probably the best approach.
+The first concern is fingerprinting. A node's behaviour when negotiating and
+sharing stale tips may make it easier for peers to distinguish that node from
+others on the network, perhaps allowing attackers to relate a node's onion
+address with its IPv4 address. The BIP 434 feature advertisement itself, the
+`prefers_blocks` value, active-tip announcement behaviour, and stale-tip relay
+timing are all potentially fingerprintable. Since stale tips are expected to
+propagate fairly efficiently and consistently, and to remain rare, this is not
+expected to be a significant problem in practice. For users that remain
+concerned, disabling stale tip relay entirely is probably the best approach.
 
-The second concern is for miners with private transaction pools. In
-that case, miners have a selection of transactions that they wish to
-mine themselves without giving other miners the opportunity to compete
-with them, only publishing them when they construct a block with
-valid proof-of-work that includes them. Relaying those transactions
-via `staletip` announcements will largely be harmful to a private
-transaction pool operator, as it will not help them win the stale block
-race (it will only allow nodes to reorg slightly faster in the event that
-they do win), but if they lose the stale block race it will make their
-private transactions available to competing miners. This is a particular
-concern if the reason for the block being stale is due to inefficiencies
-in updating ASIC miners to a new work target -- in which case there
-is almost no chance of winning the stale block race. As such, miners
-operating private transaction pools should probably disable stale tip
-relay entirely on the nodes they use for processing their mined blocks.
+The second concern is for miners with private transaction pools. In that case,
+miners have a selection of transactions that they wish to mine themselves
+without giving other miners the opportunity to compete with them, only
+publishing them when they construct a block with valid proof-of-work that
+includes them. Relaying those transactions via `staletip` announcements will
+largely be harmful to a private transaction pool operator, as it will not help
+them win the stale block race. It will only allow nodes to reorg slightly faster
+if they do win, but if they lose the stale block race it will make their private
+transactions available to competing miners. This is a particular concern if the
+reason for the block being stale is due to inefficiencies in updating ASIC
+miners to a new work target, in which case there is almost no chance of winning
+the stale block race. As such, miners operating private transaction pools should
+probably disable stale tip relay entirely on the nodes they use for processing
+their mined blocks.
 
 ## Reference Implementation
 
-- Bitcoin Core branch: https://github.com/ajtowns/bitcoin/tree/202601-staletips
-- Key files: `staletips.h`, `staletips.cpp`; also `net_processing.cpp` changes
+A prototype implementation is available at:
+
+ * Bitcoin Core branch: https://github.com/ajtowns/bitcoin/tree/202601-staletips
+
+At the time of this draft, the prototype is work in progress and may lag this
+specification. The specification above should be treated as authoritative for
+review purposes.
 
 ## Test Vectors
 
