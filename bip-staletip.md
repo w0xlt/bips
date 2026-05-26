@@ -173,10 +173,10 @@ Bitcoin block header:
 | 4 | `bits` | `uint32_t` | The calculated difficulty target being used for this block |
 | 4 | `nonce` | `uint32_t` | The nonce used to generate this block |
 
-### Sending `staletip` messages
+### Sending `staletip` Messages
 
-Nodes implementing this BIP MAY send `staletip` messages to advertise
-recent stale tips they are aware of. If so,
+Nodes implementing this BIP MAY send `staletip` messages to advertise recent
+stale tips they are aware of. If so:
 
 - Nodes SHOULD send `staletip` messages advertising recent stale tips
   that they are aware of to peers that support the `staletip` feature.
@@ -203,34 +203,33 @@ recent stale tips they are aware of. If so,
   headers.
 - Nodes SHOULD apply proof-of-work or chainwork thresholds sufficient to avoid
   using this message as a low-cost spam channel[^rat-denialofservice].
-- Nodes SHOULD avoid advertising the same tip to the same peer repeatedly
-  via multiple `staletip` messages.
-  - As a consequence, nodes SHOULD respect the `prefers_blocks` setting.
-    That is, if a peer sets `prefers_blocks` to `false`, stale tips SHOULD
-    be relayed to that peer immediately, without waiting to obtain the
-    block data.  And conversely, for a peer that sets `prefers_blocks` to
-    `true`, a node that does attempt to obtain block data SHOULD defer
-    sending the `staletip` message to that peer until it has obtained
-    the block data.
+- Nodes SHOULD avoid advertising the same tip to the same peer repeatedly via
+  multiple `staletip` messages.
+- Nodes SHOULD respect the peer's `prefers_blocks` setting. If a peer sets
+  `prefers_blocks` to `\x00`, stale tips SHOULD be relayed to that peer
+  promptly, without waiting to obtain block data. Conversely, for a peer that
+  sets `prefers_blocks` to `\x01`, a node that does attempt to obtain block
+  data SHOULD defer sending the `staletip` message to that peer until it has
+  obtained the relevant block data, unless doing so would substantially delay
+  propagation.
 - Nodes that have the block data corresponding to the tip block (and will
   provide that data to peers that request it) SHOULD set `have_block`
   as `true`. Nodes without the full block data, or that are unwilling
   to relay the data to peers, SHOULD set `have_block` as `false`.
 
-### Receiving `staletip` messages
+### Receiving `staletip` Messages
 
-Nodes implementing this BIP MAY process `staletip` messages from peers
-to gain more knowledge about stale tips. If so,
+Nodes implementing this BIP MAY process `staletip` messages from peers to gain
+more knowledge about stale tips. If so:
 
 - Nodes SHOULD reject messages whose payload cannot be parsed exactly as a
   `staletip` payload, including non-minimally encoded `CompactSize` values,
   truncated data, invalid boolean values, or trailing bytes. Nodes MAY
   disconnect peers for malformed payloads.
 - Nodes SHOULD reject (ignore) `staletip` messages where the `fork_point` is
-  not known, and MAY disconnect the sending peer if this occurs. (Note
-  that it was specified above that the sending peer MUST be sure the
-  receiver knows the `fork_point` block before sending a `staletip`
-  message).
+  not known, and MAY disconnect the sending peer if this occurs. Sending such a
+  message violates the requirement above that senders MUST NOT send `staletip`
+  messages unless they are sure the receiver knows the `fork_point` block.
 - Nodes SHOULD reject messages where the `headers` vector is empty, and MAY
   disconnect the sending peer if this occurs.
 - When processing a `staletip` message, nodes MUST bound the resources they
@@ -247,17 +246,26 @@ to gain more knowledge about stale tips. If so,
 - Nodes MAY ignore messages that violate local denial-of-service checks, or MAY
   partially process headers until local limits are reached. Nodes SHOULD NOT
   disconnect or otherwise punish peers solely for exceeding local policy limits.
-- After receiving a `staletip` message that passes any denial of
-  service checks, nodes SHOULD reconstruct the block headers from the
-  `CompressedHeader` encoding, validate the headers, and add any new
-  valid headers to their block database.
+- After receiving a `staletip` message that passes local denial-of-service
+  checks, nodes SHOULD reconstruct the block headers from the `CompressedHeader`
+  encoding, validate the headers, and add any new valid headers to their block
+  database.
 - Nodes SHOULD ignore any headers found to be invalid, and SHOULD NOT disconnect
   or otherwise punish peers for relaying invalid headers[^rat-ignoreinvalid].
-- If `have_block` is `true`, nodes that prefer to collect the full block
-  data SHOULD request that data in the normal way (eg, by sending a
-  `getdata` message).
-- Nodes that receive a new stale tip SHOULD announce that tip to their
-  peers.
+- If `have_block` is `true`, nodes that prefer to collect the full block data
+  SHOULD request that data in the normal way, for example by sending a `getdata`
+  message for the reconstructed stale tip block hash.
+- Nodes that receive a new stale tip SHOULD announce that tip to their peers
+  that negotiated the `staletip` feature, subject to local relay policy.
+
+Nodes in initial block download SHOULD NOT announce stale tips, and MAY ignore
+received `staletip` messages, until they are close enough to the active network
+tip for stale-tip recency checks to be meaningful.
+
+If a received `staletip` branch has more cumulative proof of work than the
+receiver's current active chain, the receiver SHOULD process the reconstructed
+headers through its normal header-processing logic. Such a branch may cease to
+be stale from the receiver's perspective.
 
 #### Active Tip Announcements
 
