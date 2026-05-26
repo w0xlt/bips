@@ -315,72 +315,76 @@ Node software implementing this BIP SHOULD provide a configuration option to
 disable it entirely. Implementations MAY provide separate options for relaying
 stale headers and for requesting or serving stale block data.
 
-### Test Networks
+## Test Networks
 
-Making this feature available on test networks raises additional concerns,
-as they are less protected by proof of work, and thus may have a larger
-attack surface for denial of service issues. As a result, node software
-implementing this BIP may choose to do so only for mainnet.
+Making this feature available on test networks raises additional concerns, as
+they are less protected by proof of work, and thus may have a larger attack
+surface for denial of service issues. As a result, node software implementing
+this BIP MAY choose to do so only for mainnet.
 
-#### Signet
+### Signet
 
-The signet network is designed around the assumption that all valid
-blocks are signed, and thus much lower proof of work is needed. However,
-because the block signatures are included in the coinbase transaction,
-it cannot be verified if only the block's headers are available. As such,
-when implementing this BIP for signet:
+The default signet is expected to reorg roughly once per day, with a branch of
+random length. Stale tips are therefore common on signet rather than rare, and a
+stale branch may be longer than `MAX_STALETIP_HEADERS`. Such a branch will not be
+relayed via `staletip`; nodes fall back to normal header synchronisation for it,
+and implementations MAY raise the limit on signet.
+
+The signet network is designed around the assumption that all valid blocks are
+signed, and thus much lower proof of work is needed. However, because the block
+signatures are included in the coinbase transaction, they cannot be verified if
+only the block's headers are available. As such, when implementing this BIP for
+signet:
 
  * Nodes MUST NOT send `staletip` messages when they do not have the
-   corresponding block.
- * Nodes MAY disconnect peers that send a `staletip` message with
-   `have_block` set to `false`.
- * Nodes SHOULD set `prefers_blocks` to true when negotiating the feature,
-   as they will always need to download the full block for a stale tip
-   to validate the signature.
+   corresponding block data needed to verify the signet signature.
+ * Nodes MAY disconnect peers that send a `staletip` message with `have_block`
+   set to `false`.
+ * Nodes SHOULD set `prefers_blocks` to `\x01` when negotiating the feature, as
+   they will always need to download the full block data for a stale tip to
+   validate the signature.
 
-In addition, when the difficulty is low, it is possible that varying the
-`nBits` field of a valid block will generate another valid block (see
-[#33266][#33266]). As such,
+In addition, when the difficulty is low, it is possible that varying the `nBits`
+field of a valid block will generate another valid block (see [#33266][#33266]).
+As such:
 
- * Nodes SHOULD consider variant headers (where the previous block and
-   merkle root are both the same) to be duplicates, and only advertise
-   the first seen variant as a stale tip.
+ * Nodes SHOULD consider variant headers, where the previous block and Merkle
+   root are both the same, to be duplicates, and only advertise the first seen
+   variant as a stale tip.
 
-While nodes MAY also deduplicate such variant headers when receiving them
-via `staletip` messages, if they do not perform the same deduplication
-logic when receiving such headers via standard `headers` or `block`
-relay, that provides little protection. Deduplicating when sending `staletip`
-messages is primarily aimed at avoiding nodes implementing this BIP from
-being used to amplify attacks.
+While nodes MAY also deduplicate such variant headers when receiving them via
+`staletip` messages, if they do not perform the same deduplication logic when
+receiving such headers via standard `headers` or `block` relay, that provides
+little protection. Deduplicating when sending `staletip` messages is primarily
+aimed at avoiding nodes implementing this BIP from being used to amplify
+attacks.
 
-Only variant tips need to be deduplicated: it is possible (though
-unlikely) that valid, signed blocks may be descendants of variant
-blocks. These blocks will not themselves be variants, as they will have
-different previous blocks.
+Only variant tips need to be deduplicated: it is possible, though unlikely, that
+valid signed blocks may be descendants of variant blocks. These blocks will not
+themselves be variants, as they will have different previous blocks.
 
-#### Testnet3, Testnet4
+### Testnet3 and Testnet4
 
-While testnet3 and testnet4 blocks are proof of work based like mainnet,
-they both allow for low difficulty blocks:
+While testnet3 and testnet4 blocks are proof-of-work based like mainnet, they
+both allow for low difficulty blocks:
 
- - testnet3 allows minimum difficulty blocks when a block's timestamp
-   is 20 minutes after the previous block's timestamp, and resets the
-   difficulty on an ongoing basis if this occurs for the last block in
-   a retarget period.
- - testnet4 updates these rules (as specified in [BIP 94][BIP94]), basing
-   the difficulty calculation for the first block in a new retarget period
-   on the difficulty of the first block in the previous retarget period,
-   rather than the previous block, avoiding a reset.
+ * testnet3 allows minimum difficulty blocks when a block's timestamp is 20
+   minutes after the previous block's timestamp, and resets the difficulty on an
+   ongoing basis if this occurs for the last block in a retarget period.
+ * testnet4 updates these rules, as specified in [BIP 94][BIP94], basing the
+   difficulty calculation for the first block in a new retarget period on the
+   difficulty of the first block in the previous retarget period, rather than
+   the previous block, avoiding a reset.
 
 As a result, nodes could see many valid stale tips with minimum difficulty,
 either due to such tips being created with long timestamps, or, on testnet3,
-because the difficulty has been reset. To avoid this scenario, when
-implementing this BIP on testnet3 or testnet4:
+because the difficulty has been reset. To avoid this scenario, when implementing
+this BIP on testnet3 or testnet4:
 
- * Nodes SHOULD only advertise stale tips when the stale tip itself has
-   a difficulty greater than the minimum difficulty.
- * Nodes MAY advertise stale tips only when the stale tip itself has
-   a difficulty greater than some higher threshold (eg 1,000,000).
+ * Nodes SHOULD only advertise stale tips when the stale tip itself has a
+   difficulty greater than the minimum difficulty.
+ * Nodes MAY advertise stale tips only when the stale tip itself has a
+   difficulty greater than some higher threshold, for example 1,000,000.
 
 ## Backward Compatibility
 
@@ -437,17 +441,20 @@ review purposes.
 
 ### Signet Stale Branch (19 blocks)
 
-This test vector is from signet, where a 19-block stale branch occurred at height 287767-287785.
+This serialization test vector is from signet, where a 19-block stale branch
+occurred at height 287767-287785. Because this vector has `have_block` set to
+`false`, it is not an example of a Signet `staletip` message that conforming
+nodes should relay under the Signet-specific rules above.
 
-| Field             | Value |
-| ----------------- | ----- |
-| Network           | Signet |
+| Field | Value |
+| ----- | ----- |
+| Network | Signet |
 | Fork point height | 287766 |
-| Fork point hash   | `00000012602fde2eaf33a90523f42fb07ca854c1d26108782dc4592a80507e1c` |
-| Stale tip height  | 287785 |
-| Stale tip hash    | `0000000024ff924ff932668d497bba7da9157559a68d9c87d2f28d22e5e4a001` |
-| Branch length     | 19 |
-| `have_block`      | `false` |
+| Fork point hash | `00000012602fde2eaf33a90523f42fb07ca854c1d26108782dc4592a80507e1c` |
+| Stale tip height | 287785 |
+| Stale tip hash | `0000000024ff924ff932668d497bba7da9157559a68d9c87d2f28d22e5e4a001` |
+| Branch length | 19 |
+| `have_block` | `false` |
 
 Serialized `staletip` payload (946 bytes):
 
@@ -481,28 +488,29 @@ ef05d0412f42221e6ac56e691658151d8f8bfb0f00
 ```
 
 Payload breakdown:
-- Bytes 0-31: `fork_point` (uint256, little-endian)
-- Byte 32: vector length (0x13 = 19)
-- Bytes 33-944: 19 `CompressedHeader` (48 bytes each)
-- Byte 945: `have_block` (0x00 = `false`)
+
+ * Bytes 0-31: `fork_point` (`uint256`, little-endian)
+ * Byte 32: vector length (`0x13` = 19)
+ * Bytes 33-944: 19 `CompressedHeader` entries (48 bytes each)
+ * Byte 945: `have_block` (`0x00` = `false`)
 
 ### BCH Fork Headers (18 blocks)
 
 This test vector uses mainnet headers from the BCH fork. Blocks 478559-478576
-have valid Bitcoin headers (meeting proof-of-work requirements), but are
-invalid Bitcoin blocks (block 478559 exceeds the 1MB block size limit).
-Block 478577 changed difficulty under BCH's Emergency Difficulty Adjustment
-rules, making it an invalid Bitcoin header as well.
+have valid Bitcoin headers meeting proof-of-work requirements, but are invalid
+Bitcoin blocks because block 478559 exceeds the 1MB block size limit. Block
+478577 changed difficulty under BCH's Emergency Difficulty Adjustment rules,
+making it an invalid Bitcoin header as well.
 
-| Field             | Value |
-| ----------------- | ----- |
-| Network           | Mainnet |
+| Field | Value |
+| ----- | ----- |
+| Network | Mainnet |
 | Fork point height | 478558 |
-| Fork point hash   | `0000000000000000011865af4122fe3b144e2cbeea86142e8ff2fb4107352d43` |
-| Stale tip height  | 478576 |
-| Stale tip hash    | `000000000000000001416af072f8989829f4c60a1a9658e1cec08411798e4ffa` |
-| Branch length     | 18 |
-| `have_block`      | `false` |
+| Fork point hash | `0000000000000000011865af4122fe3b144e2cbeea86142e8ff2fb4107352d43` |
+| Stale tip height | 478576 |
+| Stale tip hash | `000000000000000001416af072f8989829f4c60a1a9658e1cec08411798e4ffa` |
+| Branch length | 18 |
+| `have_block` | `false` |
 
 Serialized `staletip` payload (898 bytes):
 
@@ -535,28 +543,29 @@ dd6a30481d87e1f760122573168002cc9ef7a58fc53ad387848259354701188a3b54f70000
 ```
 
 Payload breakdown:
-- Bytes 0-31: `fork_point` (uint256, little-endian)
-- Byte 32: vector length (0x12 = 18)
-- Bytes 33-896: 18 `CompressedHeader` (48 bytes each)
-- Byte 897: `have_block` (0x00 = `false`)
+
+ * Bytes 0-31: `fork_point` (`uint256`, little-endian)
+ * Byte 32: vector length (`0x12` = 18)
+ * Bytes 33-896: 18 `CompressedHeader` entries (48 bytes each)
+ * Byte 897: `have_block` (`0x00` = `false`)
 
 ## Copyright
 
 This BIP is licensed under the 3-clause BSD license.
 
 [BIP94]: https://github.com/bitcoin/bips/blob/master/bip-0094.mediawiki
-[BIP324]: https://github.com/bitcoin/bips/blob/master/bip-0324.md
+[BIP324]: https://github.com/bitcoin/bips/blob/master/bip-0324.mediawiki
 [BIP434]: https://github.com/bitcoin/bips/blob/master/bip-0434.md
 [#33266]: https://github.com/bitcoin/bitcoin/issues/33266
 [#19858]: https://github.com/bitcoin/bitcoin/pull/19858
 
-[^rat-compressedheader]: Omitting the previous block hash from each header
-    saves 32 bytes per header (40%), as this field can be reconstructed
-    from the preceding headers in the message. This does not apply to
-    the first header, of course, which is why the fork point must be
-    included explicitly. We avoid attempting to omit `nBits` or compress
-    `nTime` or `nVersion`, as reconstructing them is significantly more
-    complicated, for comparatively much less potential gain.
+[^rat-compressedheader]: Omitting the previous block hash from each header saves
+    32 bytes per header (40%), as this field can be reconstructed from the
+    preceding headers in the message. This does not apply to the first header,
+    which is why the fork point must be included explicitly. This BIP does not
+    attempt to omit `nBits` or compress `nTime` or `nVersion`, because
+    reconstructing those fields is significantly more complicated for
+    comparatively much less potential gain.
 
 [^rat-maxheight]: A window of 1000 blocks (about 7 days) provides a
     reasonable balance between limiting resource usage, and maximising
@@ -585,8 +594,7 @@ This BIP is licensed under the 3-clause BSD license.
     costly on mainnet.
 
 [^rat-ignoreinvalid]: Ignoring rather than punishing allows nodes to apply
-    different limits for what stale tips they accept. If one node
-    uses stricter limits than its peers, this avoids the risk that
-    honest announcements from those peers will cause disconnection and
-    potentially network partitions.  This is also consistent with how
-    invalid headers are handled.
+    different limits for what stale tips they accept. If one node uses stricter
+    limits than its peers, this avoids the risk that honest announcements from
+    those peers will cause disconnection and potentially network partitions.
+    This is also consistent with how invalid headers are handled.
