@@ -315,6 +315,100 @@ Node software implementing this BIP SHOULD provide a configuration option to
 disable it entirely. Implementations MAY provide separate options for relaying
 stale headers and for requesting or serving stale block data.
 
+## Rationale
+
+This proposal treats stale-tip relay as a negotiated peer service because stale
+tips are useful but not required for normal participation in the Bitcoin network.
+A node can fully validate the active chain, relay blocks, and serve peers without
+ever learning about stale branches that did not become part of its active chain.
+Negotiating support avoids imposing bandwidth, storage, privacy, or
+implementation complexity on nodes that do not use this information.
+
+The feature uses BIP 434 negotiation instead of a protocol-version bump or
+opportunistic transmission of a new message. A protocol-version bump would
+unnecessarily coordinate this feature with unrelated P2P changes and would imply
+broader capability than is actually needed. Sending a new post-handshake message
+without feature-specific negotiation would rely on every peer safely ignoring
+unknown messages. BIP 434 provides a narrower capability signal: peers only send
+`staletip` messages after the receiver has advertised support for this specific
+feature.
+
+A separate `staletip` message is used instead of reusing `headers`, `inv`, or
+`block` relay. Existing relay messages are primarily active-chain mechanisms and
+do not communicate the extra information needed here: that the branch is believed
+to be stale, which known block should be used as the reconstruction base, and
+whether the sender expects the stale tip block data to be available. Reusing
+existing messages would either overload their meaning or require receivers to
+infer stale-tip intent from context. A dedicated message keeps the behavior
+explicit and allows implementations to apply separate resource, privacy, and
+relay policies.
+
+The protocol is announcement-based rather than request-based. An alternative
+would be to define messages for requesting known stale tips from a peer, but that
+would add more state, more peer-specific behavior, and a possible query
+amplification surface for a feature whose events are expected to be rare. Simple
+announcements are sufficient for the main use cases: faster preparation for
+near-tip reorgs and passive measurement of stale-block propagation.
+
+The message includes a `fork_point` followed by compressed headers because the
+previous-block hash in each header is redundant once the fork point is known.
+This saves 32 bytes per header while preserving the normal block-header fields
+needed for validation. More aggressive compression of `nVersion`, `nTime`,
+`nBits`, or `nonce` was not chosen because those fields are consensus-relevant
+and chain-dependent. Compressing them would add implementation complexity and
+increase the risk of divergent reconstruction behavior for relatively small
+additional savings.
+
+The `fork_point` is required to be known by the receiver so that the message can
+be processed without an extra round trip. Allowing the fork point to be either an
+active-chain block or an already-known stale-branch header lets senders avoid
+resending headers the peer is expected to know. Requiring the fork point to be
+the exact divergence point from the active chain would be simpler conceptually,
+but less efficient when both peers already know part of the stale branch.
+
+The branch length limit of 20 headers is a deliberate resource bound. Stale
+branches relevant to near-tip reorg handling are expected to be short, and longer
+branches can be handled by normal header synchronization if they become important.
+The limit keeps each message small, bounds validation work, and prevents
+`staletip` from becoming a cheap bulk-header relay mechanism.
+
+The recency and retained-tip limits are recommendations rather than strict wire
+requirements because different nodes have different goals. A monitoring node may
+retain more stale tips for measurement, while a resource-constrained node may
+retain fewer or ignore them entirely. Treating these limits as local policy
+allows implementations to differ without making honest peers appear malformed or
+misbehaving.
+
+Invalid or locally unacceptable stale-tip announcements are generally ignored
+rather than punished. Stale-tip relay is inherently race-prone: peers may have
+different active tips, different retained stale headers, or different local
+resource policies. Disconnecting peers for these cases would risk penalizing
+honest nodes during exactly the network conditions where stale tips are most
+likely to appear.
+
+The `have_block` flag only describes availability of the stale tip block. The tip
+is the block most immediately useful for reorg preparation and block-policy
+analysis, and it is the natural object for a receiver to request after validating
+the reconstructed headers. Describing availability for every block in the branch
+would make the message larger and more complex while providing little additional
+benefit for the expected short branches.
+
+No one-byte BIP 324 message type is assigned for `staletip`. BIP 324 short
+message identifiers save the 12-byte ASCII command overhead for messages that are
+sent frequently. Stale-tip announcements are expected to be rare, and each
+announcement already carries at least a 32-byte fork point and one 48-byte
+compressed header, so the bandwidth saved by replacing the `staletip` command
+name with a one-byte identifier would be negligible. Since the one-byte identifier
+space is limited, it is better reserved for messages that are common enough for
+the per-message saving to matter.
+
+The test-network guidance is stricter because test networks have weaker
+anti-spam properties than mainnet. Signet headers cannot be fully validated
+without the block data containing the signature, and testnet difficulty rules can
+make low-work stale headers cheap to produce. The specification therefore leaves
+room for implementations to disable the feature on test networks or apply
+stronger relay policy there than they would on mainnet.
+
 ## Test Networks
 
 Making this feature available on test networks raises additional concerns, as
