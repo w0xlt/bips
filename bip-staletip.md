@@ -16,7 +16,7 @@ Bitcoin miners sporadically produce stale blocks: valid blocks or valid block
 headers that do not become part of the node's active chain. This BIP defines an
 optional peer-to-peer (P2P) feature for announcing recent stale chain tips to
 peers. The announcement includes the stale branch headers and whether the sender
-is willing to serve the corresponding tip block data.
+is willing to serve corresponding stale block data.
 
 ## Motivation
 
@@ -130,7 +130,7 @@ type `staletip` and the following payload:
 | ---- | ---- | ----------- |
 | `uint256` | `fork_point` | The block hash used as the previous block hash of the first compressed header |
 | vector of `CompressedHeader` | `headers` | The stale branch headers after `fork_point`, ordered from oldest to newest |
-| `bool` | `have_block` | Whether the sender is willing to serve block data for the stale tip |
+| `bool` | `have_block` | Whether the sender is willing to serve block data for the stale branch |
 
 The `fork_point` MUST be known by the receiver and MUST be the predecessor of
 the first reconstructed header. In the common case it is the block where the
@@ -150,10 +150,12 @@ The `headers` field is ordered from oldest (the header immediately following
 
 `have_block` set to `true` means the sender currently has, and is willing to
 serve through normal block download mechanisms, the full block data for the
-stale tip, which is the final header in this `staletip` message. `have_block`
-set to `false` makes no claim about stale-tip block-data availability. A sender
-SHOULD NOT set `have_block` to `true` unless it expects a request for that block
-to succeed.
+stale tip, which is the final header in this `staletip` message. A sender that
+sets `have_block` to `true` SHOULD additionally be willing to serve earlier
+blocks on the announced stale branch that it has. `have_block` set to `false`
+makes no claim about stale-branch block-data availability. A sender SHOULD NOT
+set `have_block` to `true` unless it expects a request for the stale tip block to
+succeed.
 
 Because stale tips are very rare, this BIP does not reserve a 1-byte [BIP
 324][BIP324] message type ID for the `staletip` message.
@@ -214,8 +216,10 @@ stale tips they are aware of. If so:
   propagation.
 - Nodes that have the block data corresponding to the tip block (and will
   provide that data to peers that request it) SHOULD set `have_block`
-  as `true`. Nodes without the full block data, or that are unwilling
-  to relay the data to peers, SHOULD set `have_block` as `false`.
+  as `true`. A sender that sets `have_block` to `true` SHOULD additionally be
+  willing to serve earlier blocks on the announced stale branch that it has.
+  Nodes without the full tip block data, or that are unwilling to relay the data
+  to peers, SHOULD set `have_block` as `false`.
 
 ### Receiving `staletip` Messages
 
@@ -253,8 +257,9 @@ more knowledge about stale tips. If so:
 - Nodes SHOULD ignore any headers found to be invalid, and SHOULD NOT disconnect
   or otherwise punish peers for relaying invalid headers[^rat-ignoreinvalid].
 - If `have_block` is `true`, nodes that prefer to collect the full block data
-  SHOULD request that data in the normal way, for example by sending a `getdata`
-  message for the reconstructed stale tip block hash.
+  SHOULD request missing block data for the announced stale branch in the normal
+  way, for example by walking back from the reconstructed stale tip toward a
+  known block and sending `getdata` messages for missing blocks.
 - Nodes that receive a new stale tip SHOULD announce that tip to their peers
   that negotiated the `staletip` feature, subject to local relay policy.
 
@@ -337,7 +342,7 @@ A separate `staletip` message is used instead of reusing `headers`, `inv`, or
 `block` relay. Existing relay messages are primarily active-chain mechanisms and
 do not communicate the extra information needed here: that the branch is believed
 to be stale, which known block should be used as the reconstruction base, and
-whether the sender expects the stale tip block data to be available. Reusing
+whether the sender expects stale branch block data to be available. Reusing
 existing messages would either overload their meaning or require receivers to
 infer stale-tip intent from context. A dedicated message keeps the behavior
 explicit and allows implementations to apply separate resource, privacy, and
@@ -386,12 +391,14 @@ resource policies. Disconnecting peers for these cases would risk penalizing
 honest nodes during exactly the network conditions where stale tips are most
 likely to appear.
 
-The `have_block` flag only describes availability of the stale tip block. The tip
-is the block most immediately useful for reorg preparation and block-policy
-analysis, and it is the natural object for a receiver to request after validating
-the reconstructed headers. Describing availability for every block in the branch
-would make the message larger and more complex while providing little additional
-benefit for the expected short branches.
+The `have_block` flag is a compact signal that block data for the announced stale
+branch may be available from the sender. The tip block is the minimum object
+described by `have_block`, because it is the final header in the announcement and
+the block most immediately useful for reorg preparation and block-policy
+analysis. Receivers may also request earlier missing blocks on the announced
+branch. Describing availability for every block in the branch would make the
+message larger and more complex; peers can instead request missing blocks through
+normal block download and retry with other announcers if requests fail.
 
 No one-byte BIP 324 message type is assigned for `staletip`. BIP 324 short
 message identifiers save the 12-byte ASCII command overhead for messages that are
